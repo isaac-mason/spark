@@ -1050,6 +1050,7 @@ export class SplatPager {
         this.pageToSplatsChunk[page] = undefined;
         freedPages.add(page);
         this.pageFreelist.push(page);
+        this.pageLru.delete(chunk);
       }
     }
     this.splatsChunkToPage.delete(splats);
