@@ -180,6 +180,7 @@ export interface SparkRendererOptions {
      * @default false
      */
     lodInflate?: boolean;
+    lodTraverseMode?: "dynamic" | "standard";
     /**
      * Whether to use extended Gsplat encoding for paged splats, useful for eliminating
      * quantization artifacts from splat scenes with large internal position coordinates.
@@ -349,6 +350,7 @@ export declare class SparkRenderer extends THREE.Mesh {
     lodSplatScale: number;
     lodRenderScale: number;
     lodInflate: boolean;
+    lodTraverseMode: "dynamic" | "standard";
     pagedExtSplats: boolean;
     maxPagedSplats: number;
     numLodFetchers: number;

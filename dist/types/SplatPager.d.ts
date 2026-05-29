@@ -200,6 +200,7 @@ export declare class SplatPager {
     } | undefined;
     private insertSplatsChunkPage;
     private removeSplatsChunkPage;
+    removeSplats(splats: PagedSplats): void;
     private uploadPage;
     private getGlTexture;
     private newUint32ArrayTexture;
