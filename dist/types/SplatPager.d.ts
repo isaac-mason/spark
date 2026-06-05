@@ -30,7 +30,8 @@ export declare class PagedSplats implements SplatSource {
         chunksStart: number;
     }>;
     dynoNumSplats: dyno.DynoInt<"numSplats">;
-    dynoIndices: dyno.DynoUsampler2D<"indices", THREE.DataTexture>;
+    dynoIndices: dyno.DynoUsampler2D<"indices", THREE.Texture>;
+    private indexTexture;
     rgbMinMaxLnScaleMinMax: dyno.DynoVec4<THREE.Vector4, "rgbMinMaxLnScaleMinMax">;
     lodOpacity: dyno.DynoBool<"lodOpacity">;
     dynoNumSh: dyno.DynoInt<"numSh">;
@@ -44,7 +45,7 @@ export declare class PagedSplats implements SplatSource {
     }>;
     chunkUrl(chunk: number): string;
     fetchDecodeChunk(chunk: number): Promise<PackedResult | ExtResult>;
-    update(numSplats: number, indices: Uint32Array): void;
+    update(numSplats: number, indices: Uint32Array, forceRealloc: boolean): void;
     prepareFetchSplat(): void;
     getNumSplats(): number;
     hasRgbDir(): boolean;

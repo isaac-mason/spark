@@ -4,6 +4,7 @@ import { decode_rad_header } from "spark-rs";
 import { LN_SCALE_MAX, LN_SCALE_MIN, dyno } from ".";
 import { evaluateExtSH } from "./ExtSplats";
 import { evaluatePackedSH } from "./PackedSplats";
+import { SplatIndexTexture } from "./SplatIndexTexture";
 import { getSplatFileType, getSplatFileTypeFromPath } from "./SplatLoader";
 import type { SplatSource } from "./SplatMesh";
 import { workerPool } from "./SplatWorker";
@@ -48,7 +49,8 @@ export class PagedSplats implements SplatSource {
   radMetaPromise?: Promise<{ meta: RadMeta; chunksStart: number }>;
 
   dynoNumSplats: dyno.DynoInt<"numSplats">;
-  dynoIndices: dyno.DynoUsampler2D<"indices", THREE.DataTexture>;
+  dynoIndices: dyno.DynoUsampler2D<"indices", THREE.Texture>;
+  private indexTexture: SplatIndexTexture | null = null;
   rgbMinMaxLnScaleMinMax: dyno.DynoVec4<
     THREE.Vector4,
     "rgbMinMaxLnScaleMinMax"
@@ -99,8 +101,9 @@ export class PagedSplats implements SplatSource {
   }
 
   dispose() {
-    if (this.dynoIndices.value !== SplatPager.emptyIndicesTexture) {
-      this.dynoIndices.value.dispose();
+    if (this.indexTexture) {
+      this.indexTexture.dispose();
+      this.indexTexture = null;
       this.dynoIndices.value = SplatPager.emptyIndicesTexture;
     }
   }
@@ -306,7 +309,7 @@ export class PagedSplats implements SplatSource {
     });
   }
 
-  update(numSplats: number, indices: Uint32Array) {
+  update(numSplats: number, indices: Uint32Array, forceRealloc: boolean) {
     if (!this.pager) {
       throw new Error("PagedSplats.pager not set");
     }
@@ -316,52 +319,11 @@ export class PagedSplats implements SplatSource {
     this.dynoNumSplats.value = this.numSplats;
     const rows = Math.ceil(numSplats / 16384);
 
-    let indicesTexture =
-      this.dynoIndices.value === SplatPager.emptyIndicesTexture
-        ? undefined
-        : this.dynoIndices.value;
-    if (indicesTexture && rows > indicesTexture.image.height) {
-      indicesTexture.dispose();
-      indicesTexture = undefined;
+    if (!this.indexTexture) {
+      this.indexTexture = new SplatIndexTexture(renderer);
+      this.dynoIndices.value = this.indexTexture.texture;
     }
-
-    if (!indicesTexture) {
-      indicesTexture = new THREE.DataTexture(
-        indices,
-        4096,
-        rows,
-        THREE.RGBAIntegerFormat,
-        THREE.UnsignedIntType,
-      );
-      indicesTexture.internalFormat = "RGBA32UI";
-      indicesTexture.needsUpdate = true;
-      renderer.initTexture(indicesTexture);
-      this.dynoIndices.value = indicesTexture;
-    } else {
-      const textureIndices = indicesTexture.image.data as Uint32Array;
-      textureIndices.set(indices.subarray(0, numSplats));
-
-      const gl = renderer.getContext() as WebGL2RenderingContext;
-      renderer.state.activeTexture(gl.TEXTURE0);
-      renderer.state.bindTexture(
-        gl.TEXTURE_2D,
-        getGlTexture(renderer, indicesTexture),
-      );
-      gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D,
-        0,
-        0,
-        0,
-        4096,
-        rows,
-        gl.RGBA_INTEGER,
-        gl.UNSIGNED_INT,
-        indices,
-      );
-      renderer.state.bindTexture(gl.TEXTURE_2D, null);
-    }
+    this.indexTexture.upload(rows, indices, forceRealloc);
   }
 
   prepareFetchSplat() {}

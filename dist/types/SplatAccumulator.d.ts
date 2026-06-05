@@ -1,6 +1,7 @@
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { Readback } from './Readback';
 import { CovSplatGenerator, GsplatGenerator, SplatGenerator } from './SplatGenerator';
+import { SplatIndexTexture } from './SplatIndexTexture';
 import { SplatMesh } from './SplatMesh';
 import { DynoBool, DynoProgram, DynoProgramTemplate, DynoUsampler2DArray, DynoVec3 } from './dyno';
 import * as THREE from "three";
@@ -79,7 +80,7 @@ export declare class SplatAccumulator {
         previous: SplatAccumulator;
         lodInstances?: Map<SplatMesh, {
             numSplats: number;
-            texture: THREE.DataTexture;
+            texture: SplatIndexTexture;
         }>;
     }): {
         sameMapping: boolean;

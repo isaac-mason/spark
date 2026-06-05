@@ -1,4 +1,5 @@
 import { SplatEdit } from './SplatEdit';
+import { SplatIndexTexture } from './SplatIndexTexture';
 import { CovSplat, Dyno, DynoFloat, DynoMat3, DynoVal, DynoVec3, DynoVec4, Gsplat } from './dyno';
 import * as THREE from "three";
 export type GsplatGenerator = Dyno<{
@@ -59,7 +60,7 @@ export interface FrameUpdateContext {
     globalEdits: SplatEdit[];
     lodIndices?: {
         numSplats: number;
-        texture: THREE.DataTexture;
+        texture: SplatIndexTexture;
     };
 }
 export declare class SplatGenerator extends THREE.Object3D {

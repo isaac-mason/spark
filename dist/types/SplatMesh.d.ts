@@ -64,7 +64,7 @@ export type SplatMeshContext = {
     numSplats: DynoInt<string>;
     splats: SplatSource;
     enableLod: DynoBool<string>;
-    lodIndices: DynoUsampler2D<"lodIndices", THREE.DataTexture>;
+    lodIndices: DynoUsampler2D<"lodIndices", THREE.Texture>;
 };
 export interface SplatSource {
     prepareFetchSplat(): void;
@@ -164,6 +164,6 @@ export declare class SplatMesh extends SplatGenerator {
         quality?: boolean;
     }): Promise<void>;
 }
-export declare function maybeLookupIndex(lodIndices: DynoUsampler2D<"lodIndices", THREE.DataTexture>, index: DynoVal<"int">, numSplats: DynoVal<"int">, enableLod: DynoVal<"bool">, showLodPage: DynoVal<"int">): DynoVal<"int">;
+export declare function maybeLookupIndex(lodIndices: DynoUsampler2D<"lodIndices", THREE.Texture>, index: DynoVal<"int">, numSplats: DynoVal<"int">, enableLod: DynoVal<"bool">, showLodPage: DynoVal<"int">): DynoVal<"int">;
 export declare function maybeInjectSplatRgba(gsplat: DynoVal<typeof Gsplat>, rgba: DynoVal<typeof TRgbaArray>, index: DynoVal<"int">, enableLod: DynoVal<"bool">): DynoVal<typeof Gsplat>;
 export declare const emptyLodIndices: THREE.DataTexture;

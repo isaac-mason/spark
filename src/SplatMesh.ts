@@ -163,7 +163,7 @@ export type SplatMeshContext = {
   numSplats: DynoInt<string>;
   splats: SplatSource;
   enableLod: DynoBool<string>;
-  lodIndices: DynoUsampler2D<"lodIndices", THREE.DataTexture>;
+  lodIndices: DynoUsampler2D<"lodIndices", THREE.Texture>;
 };
 
 export interface SplatSource {
@@ -847,7 +847,8 @@ export class SplatMesh extends SplatGenerator {
     if (this.enableLod === false) {
       this.context.enableLod.value = false;
     }
-    this.context.lodIndices.value = lodIndices?.texture ?? emptyLodIndices;
+    this.context.lodIndices.value =
+      lodIndices?.texture.texture ?? emptyLodIndices;
 
     if (this.context.enableLod.value && lodSplats) {
       this.context.splats = lodSplats;
@@ -1186,7 +1187,7 @@ export class SplatMesh extends SplatGenerator {
 }
 
 export function maybeLookupIndex(
-  lodIndices: DynoUsampler2D<"lodIndices", THREE.DataTexture>,
+  lodIndices: DynoUsampler2D<"lodIndices", THREE.Texture>,
   index: DynoVal<"int">,
   numSplats: DynoVal<"int">,
   enableLod: DynoVal<"bool">,

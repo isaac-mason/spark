@@ -26,6 +26,7 @@ export {
   type GsplatModifier,
   SplatTransformer,
 } from "./SplatGenerator";
+export { SplatIndexTexture } from "./SplatIndexTexture";
 export { Readback, type Rgba8Readback, type ReadbackBuffer } from "./Readback";
 
 export {

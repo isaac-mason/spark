@@ -7,6 +7,7 @@ import {
   type GsplatGenerator,
   SplatGenerator,
 } from "./SplatGenerator";
+import type { SplatIndexTexture } from "./SplatIndexTexture";
 import { SplatMesh } from "./SplatMesh";
 import {
   LN_SCALE_MAX,
@@ -457,7 +458,7 @@ export class SplatAccumulator {
     previous: SplatAccumulator;
     lodInstances?: Map<
       SplatMesh,
-      { numSplats: number; texture: THREE.DataTexture }
+      { numSplats: number; texture: SplatIndexTexture }
     >;
   }) {
     this.viewToWorld.copy(camera.matrixWorld);

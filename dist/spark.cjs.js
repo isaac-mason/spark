@@ -10990,9 +10990,76 @@ function readRgbaArray(rgba, index) {
   });
   return dyno2.outputs.rgba;
 }
+const WIDTH = 4096;
+class SplatIndexTexture {
+  constructor(renderer) {
+    this.allocatedHeight = 0;
+    this.renderer = renderer;
+    const gl = renderer.getContext();
+    const glTexture = gl.createTexture();
+    if (!glTexture) {
+      throw new Error("createTexture failed");
+    }
+    this.glTexture = glTexture;
+    renderer.state.activeTexture(gl.TEXTURE0);
+    renderer.state.bindTexture(gl.TEXTURE_2D, glTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    renderer.state.bindTexture(gl.TEXTURE_2D, null);
+    this.texture = new THREE__namespace.ExternalTexture(glTexture);
+    this.image = { data: new Uint32Array(0), width: WIDTH, height: 0 };
+    this.texture.image = this.image;
+  }
+  upload(height, data, forceRealloc) {
+    const gl = this.renderer.getContext();
+    this.renderer.state.activeTexture(gl.TEXTURE0);
+    this.renderer.state.bindTexture(gl.TEXTURE_2D, this.glTexture);
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    const useSub = !forceRealloc && height <= this.allocatedHeight;
+    if (useSub) {
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        WIDTH,
+        height,
+        gl.RGBA_INTEGER,
+        gl.UNSIGNED_INT,
+        data
+      );
+    } else {
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA32UI,
+        WIDTH,
+        height,
+        0,
+        gl.RGBA_INTEGER,
+        gl.UNSIGNED_INT,
+        data
+      );
+      this.allocatedHeight = height;
+    }
+    this.renderer.state.bindTexture(gl.TEXTURE_2D, null);
+    this.image.data = data;
+    this.image.height = height;
+  }
+  dispose() {
+    const gl = this.renderer.getContext();
+    gl.deleteTexture(this.glTexture);
+    this.texture.sourceTexture = null;
+    this.texture.dispose();
+  }
+}
 class PagedSplats {
   constructor(options) {
     var _a2;
+    this.indexTexture = null;
     this.pager = options.pager;
     this.rootUrl = options.rootUrl ?? "";
     this.requestHeader = options.requestHeader;
@@ -11028,8 +11095,9 @@ class PagedSplats {
     }
   }
   dispose() {
-    if (this.dynoIndices.value !== SplatPager.emptyIndicesTexture) {
-      this.dynoIndices.value.dispose();
+    if (this.indexTexture) {
+      this.indexTexture.dispose();
+      this.indexTexture = null;
       this.dynoIndices.value = SplatPager.emptyIndicesTexture;
     }
   }
@@ -11193,7 +11261,7 @@ class PagedSplats {
       return lodSplats;
     });
   }
-  update(numSplats, indices) {
+  update(numSplats, indices, forceRealloc) {
     if (!this.pager) {
       throw new Error("PagedSplats.pager not set");
     }
@@ -11201,47 +11269,11 @@ class PagedSplats {
     this.numSplats = numSplats;
     this.dynoNumSplats.value = this.numSplats;
     const rows = Math.ceil(numSplats / 16384);
-    let indicesTexture = this.dynoIndices.value === SplatPager.emptyIndicesTexture ? void 0 : this.dynoIndices.value;
-    if (indicesTexture && rows > indicesTexture.image.height) {
-      indicesTexture.dispose();
-      indicesTexture = void 0;
+    if (!this.indexTexture) {
+      this.indexTexture = new SplatIndexTexture(renderer);
+      this.dynoIndices.value = this.indexTexture.texture;
     }
-    if (!indicesTexture) {
-      indicesTexture = new THREE__namespace.DataTexture(
-        indices,
-        4096,
-        rows,
-        THREE__namespace.RGBAIntegerFormat,
-        THREE__namespace.UnsignedIntType
-      );
-      indicesTexture.internalFormat = "RGBA32UI";
-      indicesTexture.needsUpdate = true;
-      renderer.initTexture(indicesTexture);
-      this.dynoIndices.value = indicesTexture;
-    } else {
-      const textureIndices = indicesTexture.image.data;
-      textureIndices.set(indices.subarray(0, numSplats));
-      const gl = renderer.getContext();
-      renderer.state.activeTexture(gl.TEXTURE0);
-      renderer.state.bindTexture(
-        gl.TEXTURE_2D,
-        getGlTexture(renderer, indicesTexture)
-      );
-      gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D,
-        0,
-        0,
-        0,
-        4096,
-        rows,
-        gl.RGBA_INTEGER,
-        gl.UNSIGNED_INT,
-        indices
-      );
-      renderer.state.bindTexture(gl.TEXTURE_2D, null);
-    }
+    this.indexTexture.upload(rows, indices, forceRealloc);
   }
   prepareFetchSplat() {
   }
@@ -12523,7 +12555,7 @@ const _SplatMesh = class _SplatMesh extends SplatGenerator {
     if (this.enableLod === false) {
       this.context.enableLod.value = false;
     }
-    this.context.lodIndices.value = (lodIndices == null ? void 0 : lodIndices.texture) ?? emptyLodIndices;
+    this.context.lodIndices.value = (lodIndices == null ? void 0 : lodIndices.texture.texture) ?? emptyLodIndices;
     if (this.context.enableLod.value && lodSplats) {
       this.context.splats = lodSplats;
       this.numSplats = (lodIndices == null ? void 0 : lodIndices.numSplats) ?? 0;
@@ -13404,7 +13436,6 @@ const QUAD_VERTICES = new Float32Array([
   0
 ]);
 const QUAD_INDICES = new Uint16Array([0, 1, 2, 0, 2, 3]);
-console.log("assert local version");
 const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
   constructor(options) {
     if (!options) {
@@ -13497,6 +13528,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
     this.lodRenderScale = options.lodRenderScale ?? 1;
     this.lodInflate = options.lodInflate ?? false;
     this.lodTraverseMode = options.lodTraverseMode ?? "standard";
+    this.experimentalTexImage2D = options.experimentalTexImage2D ?? false;
     this.pagedExtSplats = options.pagedExtSplats ?? false;
     const defaultPages = isMobile() ? isIos() ? 96 : 128 : 256;
     this.maxPagedSplats = options.maxPagedSplats ?? defaultPages * 65536;
@@ -13662,7 +13694,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
     }
   }
   onBeforeRender(renderer, scene, camera) {
-    var _a2;
+    var _a2, _b2;
     const spark = _SparkRenderer.sparkOverride ?? this;
     const frame = renderer.info.render.frame;
     const isNewFrame = frame !== spark.lastFrame;
@@ -13714,7 +13746,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
     this.uniforms.clipXY.value = spark.clipXY;
     this.uniforms.focalAdjustment.value = spark.focalAdjustment;
     this.uniforms.encodeLinear.value = spark.encodeLinear;
-    this.uniforms.ordering.value = spark.orderingTexture ?? _SparkRenderer.emptyOrdering;
+    this.uniforms.ordering.value = ((_b2 = spark.orderingTexture) == null ? void 0 : _b2.texture) ?? _SparkRenderer.emptyOrdering;
     this.uniforms.enableExtSplats.value = this.display.extSplats;
     this.uniforms.enableCovSplats.value = this.display.covSplats;
     if (this.display.extSplats) {
@@ -13905,53 +13937,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
     }
     this.readback32 = result.readback;
     this.activeSplats = result.activeSplats;
-    if (this.orderingTexture) {
-      if (rows > this.orderingTexture.image.height) {
-        this.orderingTexture.dispose();
-        this.orderingTexture = null;
-      }
-    }
     if (!this.orderingTexture) {
-      const orderingTexture = new THREE__namespace.DataTexture(
-        result.ordering,
-        4096,
-        rows,
-        THREE__namespace.RGBAIntegerFormat,
-        THREE__namespace.UnsignedIntType
-      );
-      orderingTexture.internalFormat = "RGBA32UI";
-      orderingTexture.needsUpdate = true;
-      this.orderingTexture = orderingTexture;
-    } else {
-      const renderer = this.renderer;
-      const gl = renderer.getContext();
-      if (!renderer.properties.has(this.orderingTexture)) {
-        this.orderingTexture.needsUpdate = true;
-      } else {
-        const props = renderer.properties.get(this.orderingTexture);
-        const glTexture = props.__webglTexture;
-        if (!glTexture) {
-          throw new Error("ordering texture not found");
-        }
-        renderer.state.activeTexture(gl.TEXTURE0);
-        renderer.state.bindTexture(gl.TEXTURE_2D, glTexture);
-        gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.texSubImage2D(
-          gl.TEXTURE_2D,
-          0,
-          0,
-          0,
-          4096,
-          rows,
-          gl.RGBA_INTEGER,
-          gl.UNSIGNED_INT,
-          // data,
-          result.ordering
-        );
-        renderer.state.bindTexture(gl.TEXTURE_2D, null);
-      }
+      this.orderingTexture = new SplatIndexTexture(this.renderer);
     }
+    this.orderingTexture.upload(
+      rows,
+      result.ordering,
+      this.experimentalTexImage2D
+    );
     if (this.current.mappingVersion === current.mappingVersion) {
       if (this.current.mappingVersion !== this.display.mappingVersion) {
         this.accumulators.push(this.display);
@@ -14185,7 +14178,6 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
       {}
     );
     const traverseStart = performance.now();
-    console.log("traverseMode:" + this.lodTraverseMode);
     const result = await worker.call("traverseLodTrees", {
       maxSplats,
       pixelScaleLimit,
@@ -14292,60 +14284,23 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
       const { lodId, numSplats, indices } = countIndices;
       const mesh = uuidToMesh.get(uuid);
       if (mesh.paged) {
-        mesh.paged.update(numSplats, indices);
+        mesh.paged.update(numSplats, indices, this.experimentalTexImage2D);
       } else {
-        let instance = this.lodInstances.get(mesh);
-        if (instance) {
-          if (indices.length > instance.indices.length) {
-            instance.texture.dispose();
-            instance = void 0;
-          }
-        }
         const rows = Math.ceil(indices.length / 16384);
+        let instance = this.lodInstances.get(mesh);
         if (!instance) {
           const capacity = rows * 16384;
           if (indices.length !== capacity) {
             throw new Error("Indices length != capacity");
           }
-          const texture2 = new THREE__namespace.DataTexture(
-            indices,
-            4096,
-            rows,
-            THREE__namespace.RGBAIntegerFormat,
-            THREE__namespace.UnsignedIntType
-          );
-          texture2.internalFormat = "RGBA32UI";
-          texture2.needsUpdate = true;
+          const texture2 = new SplatIndexTexture(this.renderer);
           instance = { lodId, numSplats, indices, texture: texture2 };
           this.lodInstances.set(mesh, instance);
         } else {
           instance.numSplats = numSplats;
-          const renderer = this.renderer;
-          const gl = renderer.getContext();
-          if (renderer.properties.has(instance.texture)) {
-            const props = renderer.properties.get(instance.texture);
-            const glTexture = props.__webglTexture;
-            if (!glTexture) {
-              throw new Error("lodIndices texture not found");
-            }
-            renderer.state.activeTexture(gl.TEXTURE0);
-            renderer.state.bindTexture(gl.TEXTURE_2D, glTexture);
-            gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-            gl.texSubImage2D(
-              gl.TEXTURE_2D,
-              0,
-              0,
-              0,
-              4096,
-              rows,
-              gl.RGBA_INTEGER,
-              gl.UNSIGNED_INT,
-              indices
-            );
-            renderer.state.bindTexture(gl.TEXTURE_2D, null);
-          }
+          instance.indices = indices;
         }
+        instance.texture.upload(rows, indices, this.experimentalTexImage2D);
       }
       mesh.updateMappingVersion();
     }
@@ -19677,6 +19632,7 @@ exports.SplatEditSdfType = SplatEditSdfType;
 exports.SplatEdits = SplatEdits;
 exports.SplatFileType = SplatFileType;
 exports.SplatGenerator = SplatGenerator;
+exports.SplatIndexTexture = SplatIndexTexture;
 exports.SplatLoader = SplatLoader;
 exports.SplatMesh = SplatMesh;
 exports.SplatModifier = SplatModifier;

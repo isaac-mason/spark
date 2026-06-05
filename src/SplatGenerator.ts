@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SplatEdit } from "./SplatEdit";
+import type { SplatIndexTexture } from "./SplatIndexTexture";
 import {
   CovSplat,
   Dyno,
@@ -259,7 +260,7 @@ export interface FrameUpdateContext {
   camera?: THREE.Camera;
   renderSize?: THREE.Vector2;
   globalEdits: SplatEdit[];
-  lodIndices?: { numSplats: number; texture: THREE.DataTexture };
+  lodIndices?: { numSplats: number; texture: SplatIndexTexture };
 }
 
 export class SplatGenerator extends THREE.Object3D {

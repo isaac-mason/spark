@@ -10,6 +10,7 @@ import {
 } from ".";
 import { SplatAccumulator } from "./SplatAccumulator";
 import { SplatGeometry } from "./SplatGeometry";
+import { SplatIndexTexture } from "./SplatIndexTexture";
 import { SplatWorker } from "./SplatWorker";
 import { SPLAT_TEX_HEIGHT, SPLAT_TEX_WIDTH } from "./defines";
 import { getShaders } from "./shaders";
@@ -211,6 +212,13 @@ export interface SparkRendererOptions {
   lodInflate?: boolean;
   lodTraverseMode?: "dynamic" | "standard";
   /**
+   * Experimental: use `texImage2D` realloc on every
+   * `SplatIndexTexture` upload (sort order, LoD indices, paged indices)
+   * instead of `texSubImage2D` into existing storage.
+   * @default false
+   */
+  experimentalTexImage2D?: boolean;
+  /**
    * Whether to use extended Gsplat encoding for paged splats, useful for eliminating
    * quantization artifacts from splat scenes with large internal position coordinates.
    * @default false
@@ -365,7 +373,7 @@ export class SparkRenderer extends THREE.Mesh {
   onDirty?: () => void;
   dirty: boolean;
 
-  orderingTexture: THREE.DataTexture | null = null;
+  orderingTexture: SplatIndexTexture | null = null;
   maxSplats = 0;
   activeSplats = 0;
 
@@ -390,6 +398,7 @@ export class SparkRenderer extends THREE.Mesh {
   lodRenderScale: number;
   lodInflate: boolean;
   lodTraverseMode: "dynamic" | "standard";
+  experimentalTexImage2D: boolean;
   pagedExtSplats: boolean;
   maxPagedSplats: number;
   numLodFetchers: number;
@@ -434,7 +443,7 @@ export class SparkRenderer extends THREE.Mesh {
       lodId: number;
       numSplats: number;
       indices: Uint32Array;
-      texture: THREE.DataTexture;
+      texture: SplatIndexTexture;
     }
   > = new Map();
   lodUpdates: {
@@ -539,6 +548,7 @@ export class SparkRenderer extends THREE.Mesh {
     this.lodRenderScale = options.lodRenderScale ?? 1.0;
     this.lodInflate = options.lodInflate ?? false;
     this.lodTraverseMode = options.lodTraverseMode ?? "standard";
+    this.experimentalTexImage2D = options.experimentalTexImage2D ?? false;
     this.pagedExtSplats = options.pagedExtSplats ?? false;
     const defaultPages = isMobile() ? (isIos() ? 96 : 128) : 256;
     this.maxPagedSplats = options.maxPagedSplats ?? defaultPages * 65536;
@@ -790,7 +800,7 @@ export class SparkRenderer extends THREE.Mesh {
     this.uniforms.encodeLinear.value = spark.encodeLinear;
 
     this.uniforms.ordering.value =
-      spark.orderingTexture ?? SparkRenderer.emptyOrdering;
+      spark.orderingTexture?.texture ?? SparkRenderer.emptyOrdering;
     this.uniforms.enableExtSplats.value = this.display.extSplats;
     this.uniforms.enableCovSplats.value = this.display.covSplats;
     if (this.display.extSplats) {
@@ -1044,57 +1054,14 @@ export class SparkRenderer extends THREE.Mesh {
 
     this.activeSplats = result.activeSplats;
 
-    if (this.orderingTexture) {
-      if (rows > this.orderingTexture.image.height) {
-        this.orderingTexture.dispose();
-        this.orderingTexture = null;
-      }
-    }
-
     if (!this.orderingTexture) {
-      // console.log(`Allocating orderingTexture: ${4096}x${rows}`);
-      const orderingTexture = new THREE.DataTexture(
-        result.ordering,
-        4096,
-        rows,
-        THREE.RGBAIntegerFormat,
-        THREE.UnsignedIntType,
-      );
-      orderingTexture.internalFormat = "RGBA32UI";
-      orderingTexture.needsUpdate = true;
-      this.orderingTexture = orderingTexture;
-    } else {
-      const renderer = this.renderer;
-      const gl = renderer.getContext() as WebGL2RenderingContext;
-      if (!renderer.properties.has(this.orderingTexture)) {
-        this.orderingTexture.needsUpdate = true;
-      } else {
-        const props = renderer.properties.get(this.orderingTexture) as {
-          __webglTexture: WebGLTexture;
-        };
-        const glTexture = props.__webglTexture;
-        if (!glTexture) {
-          throw new Error("ordering texture not found");
-        }
-        renderer.state.activeTexture(gl.TEXTURE0);
-        renderer.state.bindTexture(gl.TEXTURE_2D, glTexture);
-        gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.texSubImage2D(
-          gl.TEXTURE_2D,
-          0,
-          0,
-          0,
-          4096,
-          rows,
-          gl.RGBA_INTEGER,
-          gl.UNSIGNED_INT,
-          // data,
-          result.ordering,
-        );
-        renderer.state.bindTexture(gl.TEXTURE_2D, null);
-      }
+      this.orderingTexture = new SplatIndexTexture(this.renderer);
     }
+    this.orderingTexture.upload(
+      rows,
+      result.ordering,
+      this.experimentalTexImage2D,
+    );
 
     // console.log(`Sorted (${this.minSortIntervalMs}) ${numSplats} splats in ${(performance.now() - now).toFixed(0)} ms`);
 
@@ -1591,66 +1558,24 @@ export class SparkRenderer extends THREE.Mesh {
       const mesh = uuidToMesh.get(uuid) as SplatMesh;
 
       if (mesh.paged) {
-        mesh.paged.update(numSplats, indices);
+        mesh.paged.update(numSplats, indices, this.experimentalTexImage2D);
         // console.log("*** paged.update", lodId, numSplats, indices.slice(0, 5).join(","));
       } else {
-        let instance = this.lodInstances.get(mesh);
-        if (instance) {
-          if (indices.length > instance.indices.length) {
-            instance.texture.dispose();
-            instance = undefined;
-          }
-        }
-
         const rows = Math.ceil(indices.length / 16384);
+        let instance = this.lodInstances.get(mesh);
         if (!instance) {
           const capacity = rows * 16384;
           if (indices.length !== capacity) {
             throw new Error("Indices length != capacity");
           }
-          const texture = new THREE.DataTexture(
-            indices,
-            4096,
-            rows,
-            THREE.RGBAIntegerFormat,
-            THREE.UnsignedIntType,
-          );
-          texture.internalFormat = "RGBA32UI";
-          texture.needsUpdate = true;
+          const texture = new SplatIndexTexture(this.renderer);
           instance = { lodId, numSplats, indices, texture };
           this.lodInstances.set(mesh, instance);
         } else {
           instance.numSplats = numSplats;
-          // instance.indices.set(indices.subarray(0, numSplats));
-
-          const renderer = this.renderer;
-          const gl = renderer.getContext() as WebGL2RenderingContext;
-          if (renderer.properties.has(instance.texture)) {
-            const props = renderer.properties.get(instance.texture) as {
-              __webglTexture: WebGLTexture;
-            };
-            const glTexture = props.__webglTexture;
-            if (!glTexture) {
-              throw new Error("lodIndices texture not found");
-            }
-            renderer.state.activeTexture(gl.TEXTURE0);
-            renderer.state.bindTexture(gl.TEXTURE_2D, glTexture);
-            gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-            gl.texSubImage2D(
-              gl.TEXTURE_2D,
-              0,
-              0,
-              0,
-              4096,
-              rows,
-              gl.RGBA_INTEGER,
-              gl.UNSIGNED_INT,
-              indices,
-            );
-            renderer.state.bindTexture(gl.TEXTURE_2D, null);
-          }
+          instance.indices = indices;
         }
+        instance.texture.upload(rows, indices, this.experimentalTexImage2D);
       }
       mesh.updateMappingVersion();
     }
@@ -1752,7 +1677,7 @@ export class SparkRenderer extends THREE.Mesh {
     renderer.autoClear = state.autoClear;
   }
 
-  private static emptyOrdering = (() => {
+  private static emptyOrdering: THREE.Texture = (() => {
     const numIndices = 4 * 4096 * 1;
     const emptyArray = new Uint32Array(numIndices);
     const texture = new THREE.DataTexture(emptyArray, 4096, 1);

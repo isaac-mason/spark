@@ -1,5 +1,6 @@
 import { ExtSplats, PackedSplats, PagedSplats, SplatMesh, SplatPager } from '.';
 import { SplatAccumulator } from './SplatAccumulator';
+import { SplatIndexTexture } from './SplatIndexTexture';
 import { SplatWorker } from './SplatWorker';
 import * as THREE from "three";
 export interface SparkRendererOptions {
@@ -182,6 +183,13 @@ export interface SparkRendererOptions {
     lodInflate?: boolean;
     lodTraverseMode?: "dynamic" | "standard";
     /**
+     * Experimental: use `texImage2D` realloc on every
+     * `SplatIndexTexture` upload (sort order, LoD indices, paged indices)
+     * instead of `texSubImage2D` into existing storage.
+     * @default false
+     */
+    experimentalTexImage2D?: boolean;
+    /**
      * Whether to use extended Gsplat encoding for paged splats, useful for eliminating
      * quantization artifacts from splat scenes with large internal position coordinates.
      * @default false
@@ -329,7 +337,7 @@ export declare class SparkRenderer extends THREE.Mesh {
     updateTimeoutId: number;
     onDirty?: () => void;
     dirty: boolean;
-    orderingTexture: THREE.DataTexture | null;
+    orderingTexture: SplatIndexTexture | null;
     maxSplats: number;
     activeSplats: number;
     display: SplatAccumulator;
@@ -351,6 +359,7 @@ export declare class SparkRenderer extends THREE.Mesh {
     lodRenderScale: number;
     lodInflate: boolean;
     lodTraverseMode: "dynamic" | "standard";
+    experimentalTexImage2D: boolean;
     pagedExtSplats: boolean;
     maxPagedSplats: number;
     numLodFetchers: number;
@@ -394,7 +403,7 @@ export declare class SparkRenderer extends THREE.Mesh {
         lodId: number;
         numSplats: number;
         indices: Uint32Array;
-        texture: THREE.DataTexture;
+        texture: SplatIndexTexture;
     }>;
     lodUpdates: {
         lodId: number;
@@ -484,7 +493,7 @@ export declare class SparkRenderer extends THREE.Mesh {
         };
         ordering: {
             type: string;
-            value: THREE.DataTexture;
+            value: THREE.Texture;
         };
         enableExtSplats: {
             value: boolean;

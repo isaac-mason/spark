@@ -9,6 +9,7 @@ export { PackedSplats, type PackedSplatsOptions } from './PackedSplats';
 export { ExtSplats, type ExtSplatsOptions } from './ExtSplats';
 export * from './SplatPager';
 export { SplatGenerator, type GsplatGenerator, SplatModifier, type GsplatModifier, SplatTransformer, } from './SplatGenerator';
+export { SplatIndexTexture } from './SplatIndexTexture';
 export { Readback, type Rgba8Readback, type ReadbackBuffer } from './Readback';
 export { SplatMesh, type SplatMeshOptions, type SplatMeshContext, } from './SplatMesh';
 export { SplatSkinning, type SplatSkinningOptions, SplatSkinningMode, } from './SplatSkinning';
